@@ -1,17 +1,8 @@
-#include <opencv2/imgcodecs.hpp>
 #include <iostream>
+#include <opencv2/imgcodecs.hpp>
 #include "opencv2/imgproc.hpp"
-#include "opencv2/ximgproc.hpp"
 #include "opencv2/highgui.hpp"
 #include <opencv2/core.hpp>
-#include <opencv2/core/ocl.hpp>
-#include <opencv2/core/base.hpp>
-#include <opencv2/core/utility.hpp>
-#include <opencv2/core/cvdef.h>
-#include <opencv2/core/core_c.h>
-#include <algorithm>
-#include <map>
-#include <dos.h>
 
 using namespace cv;
 using namespace std;
