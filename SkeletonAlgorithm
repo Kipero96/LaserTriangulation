@@ -11,26 +11,25 @@
 #include <opencv2/core/core_c.h>
 #include <algorithm>
 #include <map>
-
+#include <dos.h>
 
 using namespace cv;
 using namespace std;
 
 enum ThinningTypes
 {
-	THINNING_ZHANGSUEN = 0, // Thinning technique of Zhang-Suen
-	THINNING_GUOHALL = 1  // Thinning technique of Guo-Hall
+	THINNING_ZHANGSUEN_MOD = 0, // Thinning technique of Zhang-Suen (modified - thinning applies only to the vertical screen center)
+	THINNING_GUOHALL_MOD = 1  // Thinning technique of Guo-Hall (modified - thinning applies only to the vertical screen center)
 };
 
-// Applies a thinning iteration to a binary image
-static void thinningIteration(Mat img, int iter, int thinningType)
+static void thinningIteration(Mat img, int iter, int thinningType) // Applies a thinning iteration to a binary image
 {
 	Mat marker = Mat::zeros(img.size(), CV_8UC1);
 
-	if (thinningType == THINNING_ZHANGSUEN) {
-		for (int i = 1; i < img.rows - 1; i++)
+	if (thinningType == THINNING_ZHANGSUEN_MOD) {
+		for (int i = 1; i < img.rows -1 ; i++)
 		{
-			for (int j = 1; j < img.cols - 1; j++)
+			for (int j = (img.cols/2 - 0.1*img.cols); j < (img.cols / 2 + 0.1 * img.cols); j++)
 			{
 				uchar p2 = img.at<uchar>(i - 1, j);
 				uchar p3 = img.at<uchar>(i - 1, j + 1);
@@ -54,10 +53,11 @@ static void thinningIteration(Mat img, int iter, int thinningType)
 			}
 		}
 	}
-	if (thinningType == THINNING_GUOHALL) {
+
+	if (thinningType == THINNING_GUOHALL_MOD) {
 		for (int i = 1; i < img.rows - 1; i++)
 		{
-			for (int j = 1; j < img.cols - 1; j++)
+			for (int j = (img.cols / 2 - 0.1 * img.cols); j < (img.cols / 2 + 0.1 * img.cols); j++)
 			{
 				uchar p2 = img.at<uchar>(i - 1, j);
 				uchar p3 = img.at<uchar>(i - 1, j + 1);
@@ -84,12 +84,10 @@ static void thinningIteration(Mat img, int iter, int thinningType)
 	img &= ~marker;
 }
 
-// Apply the thinning procedure to a given image
-void thinning(InputArray input, OutputArray output, int thinningType)
+void thinning(InputArray input, OutputArray output, int thinningType) // Apply the thinning procedure to a given image
 {
 	Mat processed = input.getMat().clone();
-	CV_CheckTypeEQ(processed.type(), CV_8UC1, "");
-	// Enforce the range of the input image to be in between 0 - 255
+	CV_CheckTypeEQ(processed.type(), CV_8UC1, ""); // Enforce the range of the input image to be in between 0 - 255
 	processed /= 255;
 
 	Mat prev = Mat::zeros(processed.size(), CV_8UC1);
@@ -109,14 +107,14 @@ void thinning(InputArray input, OutputArray output, int thinningType)
 
 
 
-
-
 void main()
 {
 	VideoCapture cap(0);
+
 	Mat img;
 	Mat gray;
 	Mat grayBinary;
+	Mat imgThinning;
 
 	/*
 	///Trackbars for HSV images///
@@ -135,18 +133,14 @@ void main()
 
 	while (true)
 	{
+		waitKey(500);					//500ms interval for thinning 
+		cap.read(img);					
 
-		cap.read(img);					//Mat is matrix datatype used to read images
+		cvtColor(img, gray, COLOR_BGR2GRAY);					//convert image captured from camera to greyscale	
+		threshold(gray, grayBinary, 252, 255, THRESH_BINARY);	//threshold greyscale image to binary image
 
-		Mat gray;
-		cvtColor(img, gray, COLOR_BGR2GRAY);
-		threshold(gray, grayBinary, 250, 255, THRESH_BINARY);
-
-		Mat imgThinningZS;
-		thinning(grayBinary, imgThinningZS, THINNING_ZHANGSUEN);
+		thinning(grayBinary, imgThinning, THINNING_ZHANGSUEN_MOD);	//use modified Zhang-Suen thinning method
 		
-		//imshow("Binary", grayBinary);
-		imshow("Skeleton", imgThinningZS);
-		waitKey(1);
+		imshow("Binary", imgThinning);
 	}
 }
