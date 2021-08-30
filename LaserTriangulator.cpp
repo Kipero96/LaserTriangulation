@@ -1,9 +1,6 @@
-#include <iostream>
-#include <opencv2/imgcodecs.hpp>
-#include "opencv2/imgproc.hpp"
-#include "opencv2/highgui.hpp"
-#include <opencv2/core.hpp>
-#include "Camera.h"
+#define _USE_MATH_DEFINES
+#define _CRT_SECURE_NO_WARNINGS
+#include "LaserTriangulator.h"
 
 using namespace cv;
 using namespace std;
@@ -12,69 +9,13 @@ LaserTriangulator::LaserTriangulator()
 {
 }
 
-LaserTriangulator::LaserTriangulator(double _focalLength, int _opticalCenterX, int _opticalCenterY, double _laserAngleTheta, double _baseline)
+LaserTriangulator::LaserTriangulator(double _focalLength, int _opticalCenterX, int _opticalCenterY, double _baseline, double _laserAngleTheta, double _k1, double _k2, double _k3, double _k4, double _k5)
 {
 	setFocalLength(_focalLength);
 	setOpticalCenterX(_opticalCenterX);
 	setOpticalCenterY(_opticalCenterY);
-	setLaserAngleTheta(_laserAngleTheta);
 	setBaseline(_baseline);
-	
-}
-
-LaserTriangulator::LaserTriangulator(double _focalLength, int _opticalCenterX, int _opticalCenterY, double _laserAngleTheta, double _baseline, double _k1)
-{
-	setFocalLength(_focalLength);
-	setOpticalCenterX(_opticalCenterX);
-	setOpticalCenterY(_opticalCenterY);
 	setLaserAngleTheta(_laserAngleTheta);
-	setBaseline(_baseline);
-	setK1(_k1);
-}
-
-LaserTriangulator::LaserTriangulator(double _focalLength, int _opticalCenterX, int _opticalCenterY, double _laserAngleTheta, double _baseline, double _k1, double _k2)
-{
-	setFocalLength(_focalLength);
-	setOpticalCenterX(_opticalCenterX);
-	setOpticalCenterY(_opticalCenterY);
-	setLaserAngleTheta(_laserAngleTheta);
-	setBaseline(_baseline);
-	setK1(_k1);
-	setK2(_k2);
-}
-
-LaserTriangulator::LaserTriangulator(double _focalLength, int _opticalCenterX, int _opticalCenterY, double _laserAngleTheta, double _baseline, double _k1, double _k2, double _k3)
-{
-	setFocalLength(_focalLength);
-	setOpticalCenterX(_opticalCenterX);
-	setOpticalCenterY(_opticalCenterY);
-	setLaserAngleTheta(_laserAngleTheta);
-	setBaseline(_baseline);
-	setK1(_k1);
-	setK2(_k2);
-	setK3(_k3);
-}
-
-LaserTriangulator::LaserTriangulator(double _focalLength, int _opticalCenterX, int _opticalCenterY, double _laserAngleTheta, double _baseline, double _k1, double _k2, double _k3, double _k4)
-{
-	setFocalLength(_focalLength);
-	setOpticalCenterX(_opticalCenterX);
-	setOpticalCenterY(_opticalCenterY);
-	setLaserAngleTheta(_laserAngleTheta);
-	setBaseline(_baseline);
-	setK1(_k1);
-	setK2(_k2);
-	setK3(_k3);
-	setK4(_k4);
-}
-
-LaserTriangulator::LaserTriangulator(double _focalLength, int _opticalCenterX, int _opticalCenterY, double _laserAngleTheta, double _baseline, double _k1, double _k2, double _k3, double _k4, double _k5)
-{
-	setFocalLength(_focalLength);
-	setOpticalCenterX(_opticalCenterX);
-	setOpticalCenterY(_opticalCenterY);
-	setLaserAngleTheta(_laserAngleTheta);
-	setBaseline(_baseline);
 	setK1(_k1);
 	setK2(_k2);
 	setK3(_k3);
@@ -187,22 +128,118 @@ double LaserTriangulator::getK5()
 	return k5;
 }
 
-void LaserTriangulator::calibrateCamera(string path)
+void LaserTriangulator::cameraCalibration(string path, int checkboardWidth, int checkboardHeight, int fieldSize)
 {
+	string fileExtension = "/Image*.png";				//Create file extension for file path
+	string filePath = path + fileExtension;
+
+	vector<String> fileNames;
+
+	glob(filePath, fileNames, false);
+	Size patternSize(checkboardWidth - 1, checkboardHeight - 1);
+	vector<vector<Point2f>> q(fileNames.size());
+
+	vector<vector<Point3f>> Q;
+	// 1. Generate checkerboard (world) coordinates Q. The board has 25 x 18
+	// fields with a size of 15x15mm
+
+	int checkerBoard[2] = { checkboardWidth, checkboardHeight };
+	// Defining the world coordinates for 3D points
+	vector<Point3f> objp;
+	for (int i = 1; i < checkerBoard[1]; i++) {
+		for (int j = 1; j < checkerBoard[0]; j++) {
+			objp.push_back(Point3f(j * fieldSize, i * fieldSize, 0));
+		}
+	}
+
+	vector<Point2f> imgPoint;
+	// Detect feature points
+	size_t i = 0;
+	for (auto const& f : fileNames) {
+		cout << string(f) << endl;
+
+		// 2. Read in the image an call findChessboardCorners()
+		Mat img = imread(fileNames[i]);
+		Mat gray;
+
+		cvtColor(img, gray, COLOR_RGB2GRAY);
+
+		bool patternFound = findChessboardCorners(gray, patternSize, q[i], CALIB_CB_ADAPTIVE_THRESH + CALIB_CB_NORMALIZE_IMAGE + CALIB_CB_FAST_CHECK);
+
+		// 2. Use cornerSubPix() to refine the found corner detections
+		if (patternFound) {
+			cornerSubPix(gray, q[i], Size(11, 11), Size(-1, -1), TermCriteria(TermCriteria::EPS + TermCriteria::MAX_ITER, 30, 0.1));
+			Q.push_back(objp);
+		}
+
+		// Display
+		drawChessboardCorners(img, patternSize, q[i], patternFound);
+		imshow("chessboard detection", img);
+		waitKey(0);
+
+		i++;
+	}
+
+
+	Matx33d K(Matx33d::eye());					// Intrinsic camera matrix
+	Vec<double, 5> k(0, 0, 0, 0, 0);		    // Distortion coefficients
+	Mat R, T;									//Rotation and translation matrices
+
+
+
+	int flags = CALIB_FIX_ASPECT_RATIO + CALIB_FIX_K3 + CALIB_ZERO_TANGENT_DIST + CALIB_FIX_PRINCIPAL_POINT;
+	Size frameSize(1920, 1080);
+
+	cout << "Calibrating..." << endl;
+
+	float error = calibrateCamera(Q, q, frameSize, K, k, R, T, flags);
+
+	setFocalLength(K(1, 1));
+	setOpticalCenterX(K(1, 3));
+	setOpticalCenterY(K(2, 3));
+	setK1(k(1));
+	setK2(k(2));
+	setK3(k(3));
+	setK4(k(4));
+	setK5(k(5));
+
+	cout << "Reprojection error: " << error << "\nIntrinsic matrix: \n" << K << "\nDistortion vector: \n" << k << endl;
+	cout << "Rotation matrix for each frame: " << R << endl;
+	cout << "Translation matrix for each frame: " << T << endl;
 }
 
-vector<Point3d> LaserTriangulator::pointTriangulation(Mat _binaryImage)
+double LaserTriangulator::calculateLaserAngleTheta(double pointX, double pointY, double knownDistance)
+{
+	double XCameraWorld1;
+	double YCameraWorld1;
+
+	XCameraWorld1 = pointX - getOpticalCenterX();	//Calculate new coordinates with relation to camera optical center
+	YCameraWorld1 = getOpticalCenterY() - pointY;
+
+	double alphaAngle = M_PI_2 + atan2(XCameraWorld1, getFocalLength());
+	double x0 = (XCameraWorld1 * knownDistance) / getFocalLength();
+	double c0 = sqrt(pow(x0, 2) + pow(knownDistance, 2));
+	double a0 = sqrt(pow(getBaseline(), 2) + pow(c0, 2) - 2 * getBaseline() * c0 * cos(alphaAngle));
+
+	double thetaAngle = asin((sin(alphaAngle) * c0) / a0);
+	setLaserAngleTheta(thetaAngle);
+
+	cout << "Laser angle set to: " << thetaAngle * (180 / M_PI) << endl;
+
+	return thetaAngle;
+}
+
+vector<PointXYZ> LaserTriangulator::pointTriangulation(Mat _binaryImage, int _iterator)
 {
 	if (_binaryImage.type() != CV_8U)					//Check input format
 	{
 		cout << "Wrong Mat class type. Prefered type = CV_8U. Please check if image is binary." << endl;
-		return;
 	}
 
-	vector<Point3d> pointVector;
-	Point3f pointCoordinates;
+	vector<PointXYZ> pointVector;
+	PointXYZ pointCoordinates;
 
-	double focalLength = getFocalLength();
+	double focalLength = getFocalLength() / 3;
 	double baseline = getBaseline();
 	int XCameraWorld;
 	int YCameraWorld;
@@ -211,28 +248,28 @@ vector<Point3d> LaserTriangulator::pointTriangulation(Mat _binaryImage)
 	double thetaAngle = getLaserAngleTheta();
 	double c1;
 
-	double x1;
-	double y1;
-	double z1;
+	float x1;
+	float y1;
+	float z1;
 
 	for (int i = 1; i < _binaryImage.rows - 1; i++)		//Loop doesn't go through whole matrix due to calculation performance 
 	{
-		for (int j = (_binaryImage.cols / 2 - 0.1 * _binaryImage.cols); j < (_binaryImage.cols / 2 + 0.1 * _binaryImage.cols); j++)
+		for (int j = 1; j < _binaryImage.cols / 2; j++)
 		{
-			if (_binaryImage.at<uchar>(i,j) == 255)		//If matrix is of type CV_8U then use Mat.at<uchar>(y,x).
+			if (_binaryImage.at<uchar>(i, j) == 255)		//If matrix is of type CV_8U then use Mat.at<uchar>(y,x).
 			{
-				XCameraWorld = j - getOpticalCenterX();	//Calculate new coordinates with relation to camera optical center
-				YCameraWorld = getOpticalCenterY() - i;
+				XCameraWorld = j - getOpticalCenterX() / 3;	//Calculate new coordinates with relation to camera optical center
+				YCameraWorld = getOpticalCenterY() / 3 - i;
 
-				alphaAngle = 90 + atan2(XCameraWorld , focalLength);	//Calculate lengths and angles according to documentation schema
-				betaAngle = 180 - alphaAngle - thetaAngle;
+				alphaAngle = M_PI_2 + atan2(XCameraWorld, focalLength);	//Calculate lengths and angles according to documentation schema
+				betaAngle = M_PI - alphaAngle - thetaAngle;
 				c1 = (sin(thetaAngle) * baseline) / sin(betaAngle);
 
 				z1 = c1 * cos(atan2(XCameraWorld, focalLength));		//Calculate world coordinates
 				x1 = (XCameraWorld * z1) / focalLength;
 				y1 = (YCameraWorld * z1) / focalLength;
 
-				pointCoordinates.x = x1;								//Save coordinates to Point3f class object
+				pointCoordinates.x = x1+_iterator;								//Save coordinates to PointXYZ class object
 				pointCoordinates.y = y1;
 				pointCoordinates.z = z1;
 
@@ -241,4 +278,108 @@ vector<Point3d> LaserTriangulator::pointTriangulation(Mat _binaryImage)
 		}
 	}
 	return pointVector;
+}
+
+enum ThinningTypes
+{
+	THINNING_ZHANGSUEN_MOD = 0, // Thinning technique of Zhang-Suen (modified - thinning applies only to the vertical screen center)
+	THINNING_GUOHALL_MOD = 1  // Thinning technique of Guo-Hall (modified - thinning applies only to the vertical screen center)
+};
+
+void LaserTriangulator::thinningIteration(Mat img, int iter, int thinningType) // Applies a thinning iteration to a binary image
+{
+	Mat marker = Mat::zeros(img.size(), CV_8UC1);
+
+	if (thinningType == THINNING_ZHANGSUEN_MOD) {
+		for (int i = 1; i < img.rows - 1; i++)
+		{
+			for (int j = (img.cols / 2 - 0.1 * img.cols); j < (img.cols / 2 + 0.1 * img.cols); j++)
+			{
+				uchar p2 = img.at<uchar>(i - 1, j);
+				uchar p3 = img.at<uchar>(i - 1, j + 1);
+				uchar p4 = img.at<uchar>(i, j + 1);
+				uchar p5 = img.at<uchar>(i + 1, j + 1);
+				uchar p6 = img.at<uchar>(i + 1, j);
+				uchar p7 = img.at<uchar>(i + 1, j - 1);
+				uchar p8 = img.at<uchar>(i, j - 1);
+				uchar p9 = img.at<uchar>(i - 1, j - 1);
+
+				int A = (p2 == 0 && p3 == 1) + (p3 == 0 && p4 == 1) +
+					(p4 == 0 && p5 == 1) + (p5 == 0 && p6 == 1) +
+					(p6 == 0 && p7 == 1) + (p7 == 0 && p8 == 1) +
+					(p8 == 0 && p9 == 1) + (p9 == 0 && p2 == 1);
+				int B = p2 + p3 + p4 + p5 + p6 + p7 + p8 + p9;
+				int m1 = iter == 0 ? (p2 * p4 * p6) : (p2 * p4 * p8);
+				int m2 = iter == 0 ? (p4 * p6 * p8) : (p2 * p6 * p8);
+
+				if (A == 1 && (B >= 2 && B <= 6) && m1 == 0 && m2 == 0)
+					marker.at<uchar>(i, j) = 1;
+			}
+		}
+	}
+
+	if (thinningType == THINNING_GUOHALL_MOD) {
+		for (int i = 1; i < img.rows - 1; i++)
+		{
+			for (int j = (img.cols / 2 - 0.1 * img.cols); j < (img.cols / 2 + 0.1 * img.cols); j++)
+			{
+				uchar p2 = img.at<uchar>(i - 1, j);
+				uchar p3 = img.at<uchar>(i - 1, j + 1);
+				uchar p4 = img.at<uchar>(i, j + 1);
+				uchar p5 = img.at<uchar>(i + 1, j + 1);
+				uchar p6 = img.at<uchar>(i + 1, j);
+				uchar p7 = img.at<uchar>(i + 1, j - 1);
+				uchar p8 = img.at<uchar>(i, j - 1);
+				uchar p9 = img.at<uchar>(i - 1, j - 1);
+
+				int C = ((!p2) & (p3 | p4)) + ((!p4) & (p5 | p6)) +
+					((!p6) & (p7 | p8)) + ((!p8) & (p9 | p2));
+				int N1 = (p9 | p2) + (p3 | p4) + (p5 | p6) + (p7 | p8);
+				int N2 = (p2 | p3) + (p4 | p5) + (p6 | p7) + (p8 | p9);
+				int N = N1 < N2 ? N1 : N2;
+				int m = iter == 0 ? ((p6 | p7 | (!p9)) & p8) : ((p2 | p3 | (!p5)) & p4);
+
+				if ((C == 1) && ((N >= 2) && ((N <= 3)) & (m == 0)))
+					marker.at<uchar>(i, j) = 1;
+			}
+		}
+	}
+
+	img &= ~marker;
+}
+
+void LaserTriangulator::thinning(InputArray input, OutputArray output, int thinningType) // Apply the thinning procedure to a given image
+{
+	Mat processed = input.getMat().clone();
+	CV_CheckTypeEQ(processed.type(), CV_8UC1, ""); // Enforce the range of the input image to be in between 0 - 255
+	processed /= 255;
+
+	Mat prev = Mat::zeros(processed.size(), CV_8UC1);
+	Mat diff;
+
+	do {
+		thinningIteration(processed, 0, thinningType);
+		thinningIteration(processed, 1, thinningType);
+		absdiff(processed, prev, diff);
+		processed.copyTo(prev);
+	} while (countNonZero(diff) > 0);
+
+	processed *= 255;
+
+	output.assign(processed);
+}
+
+PointCloud<PointXYZ> LaserTriangulator::generatePointCloud(vector<vector<PointXYZ>> _pointTriangulationVector)
+{
+	PointCloud<PointXYZ> cloud;
+
+	for (int i = 0; i <= _pointTriangulationVector.size(); i++)
+	{
+		for (int j = 0; j <= _pointTriangulationVector[i].size(); j++)
+		{
+			cloud.push_back(PointXYZ(_pointTriangulationVector[i][j].x, _pointTriangulationVector[i][j].y, _pointTriangulationVector[i][j].z));
+		}
+	}
+
+	return cloud;
 }
