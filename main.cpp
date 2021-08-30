@@ -1,8 +1,4 @@
-#include <iostream>
-#include <opencv2/imgcodecs.hpp>
-#include "opencv2/imgproc.hpp"
-#include "opencv2/highgui.hpp"
-#include <opencv2/core.hpp>
+#include "LaserTriangulator.h"
 
 using namespace cv;
 using namespace std;
@@ -18,9 +14,9 @@ static void thinningIteration(Mat img, int iter, int thinningType) // Applies a 
 	Mat marker = Mat::zeros(img.size(), CV_8UC1);
 
 	if (thinningType == THINNING_ZHANGSUEN_MOD) {
-		for (int i = 1; i < img.rows -1 ; i++)
+		for (int i = 1; i < img.rows - 1; i++)
 		{
-			for (int j = (img.cols/2 - 0.1*img.cols); j < (img.cols / 2 + 0.1 * img.cols); j++)
+			for (int j = 1; j < (img.cols / 2); j++)
 			{
 				uchar p2 = img.at<uchar>(i - 1, j);
 				uchar p3 = img.at<uchar>(i - 1, j + 1);
@@ -48,7 +44,7 @@ static void thinningIteration(Mat img, int iter, int thinningType) // Applies a 
 	if (thinningType == THINNING_GUOHALL_MOD) {
 		for (int i = 1; i < img.rows - 1; i++)
 		{
-			for (int j = (img.cols / 2 - 0.1 * img.cols); j < (img.cols / 2 + 0.1 * img.cols); j++)
+			for (int j = img.cols; j < (img.cols / 2); j++)
 			{
 				uchar p2 = img.at<uchar>(i - 1, j);
 				uchar p3 = img.at<uchar>(i - 1, j + 1);
@@ -96,42 +92,46 @@ void thinning(InputArray input, OutputArray output, int thinningType) // Apply t
 	output.assign(processed);
 }
 
-
-
 void main()
 {
 	VideoCapture cap(0);
+
+	LaserTriangulator Generator(1325.43, 942, 543, 273);
+
+	Generator.calculateLaserAngleTheta(628, 821, 450);
 
 	Mat img;
 	Mat gray;
 	Mat grayBinary;
 	Mat imgThinning;
 
-	/*
-	///Trackbars for HSV images///
+	vector<vector<PointXYZ>> dataSet;
 
-	int hmin = 0, smin = 0, vmin = 230;
-	int hmax = 255, smax = 75, vmax = 253;
-
-	namedWindow("Trackbars", (640, 200));
-	createTrackbar("Hue Min", "Trackbars", &hmin, 255);
-	createTrackbar("Hue Max", "Trackbars", &hmax, 255);
-	createTrackbar("Sat Min", "Trackbars", &smin, 255);
-	createTrackbar("Sat Max", "Trackbars", &smax, 255);
-	createTrackbar("Light Min", "Trackbars", &vmin, 255);
-	createTrackbar("Light Max", "Trackbars", &vmax, 255);
-	*/
-
-	while (true)
+	for (int i = 0; i < 5; i++)
 	{
-		waitKey(500);					//500ms interval for thinning 
-		cap.read(img);					
+		waitKey(5000);					//500ms interval for thinning 
+		cap.read(img);
 
 		cvtColor(img, gray, COLOR_BGR2GRAY);					//convert image captured from camera to greyscale	
-		threshold(gray, grayBinary, 252, 255, THRESH_BINARY);	//threshold greyscale image to binary image
+		threshold(gray, grayBinary, 250, 255, THRESH_BINARY);	//threshold greyscale image to binary image
 
 		thinning(grayBinary, imgThinning, THINNING_ZHANGSUEN_MOD);	//use modified Zhang-Suen thinning method
+
+		for (int j = 0; j < Generator.pointTriangulation(imgThinning, i).size(); j++)
+		{
+			
+			cout << Generator.pointTriangulation(imgThinning,i)[j].y << " " << Generator.pointTriangulation(imgThinning, i)[j].z << endl;
+		}
+		
+
+		dataSet.push_back(Generator.pointTriangulation(imgThinning,i));
 		
 		imshow("Binary", imgThinning);
+		imshow("Gray", grayBinary);
+
 	}
+
+	PointCloud<PointXYZ> cloud = Generator.generatePointCloud(dataSet);
+
+
 }
