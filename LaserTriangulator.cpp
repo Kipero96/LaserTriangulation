@@ -5,22 +5,15 @@
 using namespace cv;
 using namespace std;
 
-LaserTriangulator::LaserTriangulator()
-{
-}
-
-LaserTriangulator::LaserTriangulator(double _focalLength, int _opticalCenterX, int _opticalCenterY, double _baseline, double _laserAngleTheta, double _k1, double _k2, double _k3, double _k4, double _k5)
+LaserTriangulator::LaserTriangulator(double _focalLength, int _opticalCenterX, int _opticalCenterY, double _baseline, double _laserAngleTheta,
+									 double _k1, double _k2, double _k3, double _k4, double _k5)
 {
 	setFocalLength(_focalLength);
 	setOpticalCenterX(_opticalCenterX);
 	setOpticalCenterY(_opticalCenterY);
 	setBaseline(_baseline);
 	setLaserAngleTheta(_laserAngleTheta);
-	setK1(_k1);
-	setK2(_k2);
-	setK3(_k3);
-	setK4(_k4);
-	setK5(_k5);
+	setK(double _k1, double _k2, double _k3, double _k4, double _k5);
 }
 
 LaserTriangulator::~LaserTriangulator()
@@ -52,29 +45,12 @@ void LaserTriangulator::setBaseline(double _baseline)
 {
 	baseline = _baseline;
 }
-
-void LaserTriangulator::setK1(double _k1)
+void LaserTriangulator::setK(double _k1, double _k2, double _k3, double _k4, double _k5)
 {
 	k1 = _k1;
-}
-
-void LaserTriangulator::setK2(double _k2)
-{
 	k2 = _k2;
-}
-
-void LaserTriangulator::setK3(double _k3)
-{
 	k3 = _k3;
-}
-
-void LaserTriangulator::setK4(double _k4)
-{
 	k4 = _k4;
-}
-
-void LaserTriangulator::setK5(double _k5)
-{
 	k5 = _k5;
 }
 
@@ -101,31 +77,6 @@ double LaserTriangulator::getLaserAngleTheta()
 double LaserTriangulator::getBaseline()
 {
 	return baseline;
-}
-
-double LaserTriangulator::getK1()
-{
-	return k1;
-}
-
-double LaserTriangulator::getK2()
-{
-	return k2;
-}
-
-double LaserTriangulator::gsetK3()
-{
-	return k3;
-}
-
-double LaserTriangulator::getK4()
-{
-	return k4;
-}
-
-double LaserTriangulator::getK5()
-{
-	return k5;
 }
 
 void LaserTriangulator::cameraCalibration(string path, int checkboardWidth, int checkboardHeight, int fieldSize)
@@ -181,9 +132,9 @@ void LaserTriangulator::cameraCalibration(string path, int checkboardWidth, int 
 	}
 
 
-	Matx33d K(Matx33d::eye());					// Intrinsic camera matrix
-	Vec<double, 5> k(0, 0, 0, 0, 0);		    // Distortion coefficients
-	Mat R, T;									//Rotation and translation matrices
+	Matx33d cameraMatrix(Matx33d::eye());
+	Vec<double, 5> distorionCoefficients(0, 0, 0, 0, 0);
+	Mat rotationMatrix, translationMatrix;
 
 
 
@@ -192,20 +143,16 @@ void LaserTriangulator::cameraCalibration(string path, int checkboardWidth, int 
 
 	cout << "Calibrating..." << endl;
 
-	float error = calibrateCamera(Q, q, frameSize, K, k, R, T, flags);
+	float error = calibrateCamera(Q, q, frameSize, cameraMatrix, distorionCoefficients, rotationMatrix, translationMatrix, flags);
 
-	setFocalLength(K(1, 1));
-	setOpticalCenterX(K(1, 3));
-	setOpticalCenterY(K(2, 3));
-	setK1(k(1));
-	setK2(k(2));
-	setK3(k(3));
-	setK4(k(4));
-	setK5(k(5));
+	setFocalLength(distorionCoefficients(1, 1));
+	setOpticalCenterX(distorionCoefficients(1, 3));
+	setOpticalCenterY(distorionCoefficients(2, 3));
+	setK(distorionCoefficients(1), distorionCoefficients(2), distorionCoefficients(3), distorionCoefficients(4), distorionCoefficientsv(5));
 
-	cout << "Reprojection error: " << error << "\nIntrinsic matrix: \n" << K << "\nDistortion vector: \n" << k << endl;
-	cout << "Rotation matrix for each frame: " << R << endl;
-	cout << "Translation matrix for each frame: " << T << endl;
+	cout << "Reprojection error: " << error << "\nIntrinsic matrix: \n" << cameraMatrix << "\nDistortion vector: \n" << distorionCoefficients << endl;
+	cout << "Rotation matrix for each frame: " << rotationMatrix << endl;
+	cout << "Translation matrix for each frame: " << translationMatrix << endl;
 }
 
 double LaserTriangulator::calculateLaserAngleTheta(double pointX, double pointY, double knownDistance)
